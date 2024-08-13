@@ -12,6 +12,16 @@ class Action(TypedDict):
     name: str
     arguments: Dict[str, Any]
 
+def deep_dict_compare(d1, d2):
+    """ Recursively compares two dictionaries including nested dictionaries. """
+    if isinstance(d1, dict) and isinstance(d2, dict):
+        if d1.keys() != d2.keys():
+            return False
+        return all(deep_dict_compare(d1[key], d2[key]) for key in d1)
+    elif isinstance(d1, list) and isinstance(d2, list):
+        return all(deep_dict_compare(x, y) for x, y in zip(d1, d2)) and len(d1) == len(d2)
+    else:
+        return d1 == d2
 
 def to_hashable(item):
     """
@@ -133,6 +143,11 @@ class BaseEnv:
                     info["r_outputs"] = 0
                     reward = 0
 
+        # individual action eval
+        if "actions" in self.task:
+            actions_with_eval = self.evaluate_actions_match()
+            info["actions_with_eval"] = actions_with_eval
+            
         # check database change
         if "actions" in self.task:
             # TODO: cache gt_data_hash in tasks.py (low priority)
@@ -147,3 +162,16 @@ class BaseEnv:
                 reward = 0
 
         return reward, info
+
+    def evaluate_actions_match(self) -> List[Dict]:
+        """matches actions between self.actions (agent) and self.task["actions"] (groundtruth)"""
+        actions_with_eval = []
+        for gold_action in self.task["actions"]:
+            action_with_eval = deepcopy(gold_action)
+            action_with_eval["success"] = any(
+                deep_dict_compare(pred_action, gold_action)
+                for pred_action in self.actions
+            )
+            actions_with_eval.append(action_with_eval)
+
+        return actions_with_eval
